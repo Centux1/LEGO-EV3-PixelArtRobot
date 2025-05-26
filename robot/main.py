@@ -17,9 +17,9 @@ from collections import OrderedDict
 # Initialize the EV3.
 ev3 = EV3Brick()
 
-motorX = Motor(Port.D, positive_direction=Direction.COUNTERCLOCKWISE)
-motorY = Motor(Port.A, positive_direction=Direction.COUNTERCLOCKWISE)
-motorZ = Motor(Port.C)
+motorX = Motor(Port.B, positive_direction=Direction.COUNTERCLOCKWISE)
+motorY = Motor(Port.D, positive_direction=Direction.COUNTERCLOCKWISE)
+motorZ = Motor(Port.C, positive_direction=Direction.COUNTERCLOCKWISE)
 
 touchSensorY = TouchSensor(Port.S1)
 touchSensorX = TouchSensor(Port.S2)
@@ -31,28 +31,86 @@ onePlate= 0.85
 gearDiameter = 1.73
 # gearPitchDiameter = 1.54
 
-# pullCorrection = {"x": -0.09, "y": -0.14}
-pullCorrection = {"x": -0.025, "y": -0.1} #working
-# pullCorrection = {"x": -0.025, "y": -10}
+# pullCorrection = {"x": -0.025, "y": -0.1} #old
+pullCorrection = {"x": 0, "y": -0.1} #working
+
+# pushCorrection = {"x": 0.15, "y": -0.01} #old
+pushCorrection = {"x": 0.1, "y": 0} #working
+
+currCords = (-1000, -1000)
 
 motorSpeed = 200
 
 isPaused = False
 refill = False
 
+# adjustments = [
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, -0.1, motorY, 0.1)
+#     ]
+
+# adjustments = [
+#         (0, +0.1),
+#         (0, -0.2),
+#         (0, +0.1),
+#         (+0.1, 0),
+#         (-0.2, 0),
+#         (+0.1, 0)
+#     ]
+
+# adjustments = [
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0.1, motorY, 0),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, 0, motorY, -0.1),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, -0.1, motorY, 0),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1),
+#         (motorX, 0, motorY, 0.1)
+#     ]
+
 #-------------------------------------------------------------------------
 
-def calculate_degree(cord, type="x", currentDegree=-10000):
+def calculate_degree(cord, type=None, currentDegree=0):
     distance_cm = onePlate * cord
 
-    volume = 3.14159265359 * gearDiameter
-    rotations = distance_cm / volume
+    scope = 3.14159265359 * gearDiameter
+    rotations = distance_cm / scope
     degree = rotations * 360
+    
+    if type != None:
+        if currentDegree > degree and (currCords[0] if type == 'x' else currCords[1]) != cord:
+            # print(type + " pull")
+            degree = calculate_degree(cord+pullCorrection[type])
 
-    if currentDegree > degree:
-        print(pullCorrection)
-        degree = calculate_degree(cord+pullCorrection[type])
+        if currentDegree < degree and (currCords[0] if type == 'x' else currCords[1]) != cord:
+            # print(type + " push")
+            degree = calculate_degree(cord+pushCorrection[type])
 
+    
     return degree
 
 #calibration -------------------------------------------------------------
@@ -74,15 +132,17 @@ def calibration():
     calibrate_motorXY(motorY, touchSensorY)
     wait(1000)
 
+    # motorY.run_angle(50, calculate_degree(0.66), then=Stop.HOLD)
     motorY.run_angle(50, calculate_degree(0.62), then=Stop.HOLD)
-    motorX.run_angle(50, calculate_degree(1.136), then=Stop.HOLD)
+    # motorX.run_angle(50, calculate_degree(0.1), then=Stop.HOLD)
+    motorX.run_angle(50, calculate_degree(0.15), then=Stop.HOLD)
     wait(1000)
     motorY.stop()
     motorX.stop()
 
-    motorZ.run_until_stalled(-800, then=Stop.HOLD, duty_limit=40)
-    # motorZ.run_time(500, 300)
-    motorZ.run_time(500, 550)
+    motorZ.run_until_stalled(500, then=Stop.HOLD, duty_limit=40)
+    # motorZ.run_time(-500, 300)
+    motorZ.run_time(-500, 550)
     wait(1000)
     motorZ.stop()
 
@@ -93,83 +153,87 @@ def calibration():
 #-------------------------------------------------------------------------
 
 def drive(cords):
-    motorY.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[1], "y", motorY.angle()), then=Stop.HOLD)
-    motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[0], "x", motorX.angle()), then=Stop.HOLD)
+    global currCords
+
+    if currCords[1] != cords[1]:
+        # motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(30, "x", motorX.angle()), then=Stop.HOLD) # for driving stability
+
+        motorY.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[1], "y", motorY.angle()), then=Stop.HOLD)
+
+    if currCords[0] != cords[0]:
+        motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[0], "x", motorX.angle()), then=Stop.HOLD)
+
     wait(1000)
+    # print("--------------------")
+    currCords = cords
 
 #-------------------------------------------------------------------------
 
 def pickup():
-    motorZ.run_until_stalled(-400, then=Stop.HOLD, duty_limit=40)
-    angleZ = motorZ.angle()
-    
-    adjustments = [
-        (motorX, 0, motorY, -0.1),
-        (motorX, -0.1, motorY, 0),
-        (motorX, 0, motorY, 0.1),
-        (motorX, 0, motorY, 0.1),
-        (motorX, 0.1, motorY, 0),
-        (motorX, 0.1, motorY, 0),
-        (motorX, 0, motorY, -0.1),
-        (motorX, 0, motorY, -0.1),
-        (motorX, -0.1, motorY, 0.1)
-    ]
-
-    # adjustments = [
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0.1, motorY, 0),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0.1, motorY, 0),
-    #     (motorX, 0.1, motorY, 0),
-    #     (motorX, 0.1, motorY, 0),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, 0, motorY, -0.1),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, -0.1, motorY, 0),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0, motorY, 0.1),
-    #     (motorX, 0, motorY, 0.1)
-    # ]
+    motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=40)
+    # angleZ = motorZ.angle()
 
     motorZ.run_target(400, 0)
     motorZ.stop()
 
-    for adj in adjustments:
-        motor1, angle1, motor2, angle2 = adj
-        print(angleZ)
+    # for adj in adjustments:
+    #     motor1, angle1, motor2, angle2 = adj
+    #     print(angleZ)
 
-        if angleZ >= -190:
-            motor1.run_angle(800, calculate_degree(angle1), then=Stop.HOLD)
-            motor2.run_angle(800, calculate_degree(angle2), then=Stop.HOLD)
+    #     if angleZ >= -190:
+    #         motor1.run_angle(800, calculate_degree(angle1), then=Stop.HOLD)
+    #         motor2.run_angle(800, calculate_degree(angle2), then=Stop.HOLD)
 
-            motorZ.run_until_stalled(-400, then=Stop.HOLD, duty_limit=40)
-            angleZ = motorZ.angle()
-            motorZ.run_target(400, 0)
-        else:
-            break        
+    #         motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=40)
+    #         angleZ = motorZ.angle()
+    #         motorZ.run_target(400, 0)
+    #     else:
+    #         break        
+
 
 def place():
+    # if (ev3.battery.voltage() >= 7500):
+    #     place_dl = 40
+    # else:
+    #     place_dl = 50
 
-    if (ev3.battery.voltage() >= 7500):
-        dl = 40
-    else:
-        dl = 50
+    place_dl = 60
+    test_dl = 31
 
-    motorZ.run_until_stalled(-800, then=Stop.HOLD, duty_limit=dl)
+    # motorZ.run_until_stalled(50, then=Stop.HOLD, duty_limit=test_dl)
+    # angleZ = motorZ.angle()
+    motorZ.run_target(200, 0)
+
+    # print(angleZ)
+
+    # if angleZ <= 90:
+    #     print("ERROR")
+
+    #     for adj in adjustments:
+    #         angleX, angleY = adj
+    #         print(angleZ)
+
+    #         if angleZ <= 90:
+    #             if angleX != 0:
+    #                 motorX.run_angle(motorSpeed, calculate_degree(angleX, "x", motorX.angle()), then=Stop.HOLD)
+
+    #             if angleY != 0:
+    #                 motorY.run_angle(motorSpeed, calculate_degree(angleY, "y", motorY.angle()), then=Stop.HOLD)
+
+    #             wait(1000)
+
+    #             motorZ.run_until_stalled(50, then=Stop.HOLD, duty_limit=test_dl)
+    #             angleZ = motorZ.angle()
+    #             motorZ.run_target(200, 0)
+    #         else:
+    #             break
+
+    #         print("--------------------")
+
+    motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=place_dl)
     motorZ.run_target(500, 0)
     wait(1000)
-    motorZ.stop()
+    motorZ.stop()           
 
 #-------------------------------------------------------------------------
 
@@ -216,51 +280,50 @@ def run(lego, mbox):
     mbox.send("finished")
     
 def test():
+     
     calibration()
 
-    drive((31,31))
-    place()
+    # drive((31,31))
+    # pickup()
+    # wait(6000)
+    # drive((0,0))
+    # pickup()
 
-    drive((17,24))
-    place()
-    drive((14,19))
-    place()
-    drive((12,12))
-    place()
-    drive((5,10))
-    place()
+    # for i in range(0, 31):
+    #     drive((i, i))
+    #     pickup()
+    #     drive((0,0))
+    #     pickup()
 
-    drive((0,0))
-    place()
+    # import random
+    # while True:
+    #     x = random.randint(0, 31)
+    #     y = random.randint(0, 31)
+    #     drive((x, y))
+    #     pickup()
 
-    drive((6,28))
-    place()
-
-    drive((0,0))
-    place()
 
     drive((20,33))
     pickup()
-    drive((20,31))
+    drive((1,1))
+
     place()
 
     drive((22,33))
     pickup()
-    drive((22,31))
+    drive((2,2))
     place()
 
     drive((24,33))
     pickup()
-    drive((24,31))
+    drive((3,3))
     place()
 
     drive((26,33))
     pickup()
-    drive((26,31))
+    drive((4,4))
     place()
 
-    drive((0,0))
-    pickup()
 
 #-------------------------------------------------------------------------
 

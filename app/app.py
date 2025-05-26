@@ -532,9 +532,16 @@ class Page2(ctk.CTkFrame):
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.insertInfoTextBox("msg", "Connection to EV3 is attempted...")
         try:
-            self.ssh.connect("ev3dev", username="robot", password="maker")
+            self.ssh.connect(
+                "ev3dev",
+                username="robot",
+                password="maker",
+                look_for_keys=False,   # Add this
+                allow_agent=False      # And this
+            )
             self.insertInfoTextBox("msg", "Connection to EV3 has been established.")
         except Exception as e:
+            print(e)
             self.insertInfoTextBox("error", "No connection with EV3 possible.")
             return False
         
@@ -675,9 +682,9 @@ class Page2(ctk.CTkFrame):
         if type == "msg":
             self.infoTextBox.insert("end", f"\n[{time}] " + text)
         elif type == "warning":
-            self.infoTextBox.insert("end", f"\n[{time}] [Warning] " + text)
+            self.infoTextBox.insert("end", f"\n[{time}] ⚠️ [Warning] " + text)
         elif type == "error":
-            self.infoTextBox.insert("end", f"\n[{time}] [ERROR] " + text)
+            self.infoTextBox.insert("end", f"\n[{time}] ❌ [ERROR] " + text)
 
         self.infoTextBox.see("end")
         self.infoTextBox.configure(state="disabled")

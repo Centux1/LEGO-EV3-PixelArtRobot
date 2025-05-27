@@ -132,9 +132,7 @@ def calibration():
     calibrate_motorXY(motorY, touchSensorY)
     wait(1000)
 
-    # motorY.run_angle(50, calculate_degree(0.66), then=Stop.HOLD)
     motorY.run_angle(50, calculate_degree(0.62), then=Stop.HOLD)
-    # motorX.run_angle(50, calculate_degree(0.1), then=Stop.HOLD)
     motorX.run_angle(50, calculate_degree(0.15), then=Stop.HOLD)
     wait(1000)
     motorY.stop()
@@ -152,19 +150,34 @@ def calibration():
     
 #-------------------------------------------------------------------------
 
+# def drive(cords):
+#     global currCords
+
+#     if currCords[1] != cords[1]:
+#         # motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(30, "x", motorX.angle()), then=Stop.HOLD) # for driving stability
+
+#         motorY.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[1], "y", motorY.angle()), then=Stop.HOLD)
+
+#     if currCords[0] != cords[0]:
+#         motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[0], "x", motorX.angle()), then=Stop.HOLD)
+
+#     wait(1000)
+#     # print("--------------------")
+#     currCords = cords
+
 def drive(cords):
     global currCords
 
     if currCords[1] != cords[1]:
-        # motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(30, "x", motorX.angle()), then=Stop.HOLD) # for driving stability
-
-        motorY.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[1], "y", motorY.angle()), then=Stop.HOLD)
+        motorY.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[1], "y", motorY.angle()), then=Stop.HOLD, wait=False)
 
     if currCords[0] != cords[0]:
         motorX.run_target(speed=motorSpeed, target_angle=calculate_degree(cords[0], "x", motorX.angle()), then=Stop.HOLD)
 
+    while motorY.speed() != 0:
+        wait(100)
+    
     wait(1000)
-    # print("--------------------")
     currCords = cords
 
 #-------------------------------------------------------------------------
@@ -306,8 +319,8 @@ def test():
     drive((20,33))
     pickup()
     drive((1,1))
-
     place()
+
 
     drive((22,33))
     pickup()

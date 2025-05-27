@@ -25,7 +25,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         # basic config
         self.title("PixelArtRobot")
         self.geometry(f"{800}x{530}")
-        self.resizable(width=False, height=False)
+        # self.resizable(width=False, height=False)
 
         # when the window is closed
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -230,7 +230,7 @@ class Page1(ctk.CTkFrame):
 
         #-----------------------------------------------------------------
 
-    def dnd(self, event):
+    def dnd(self, event): # drag and drop
         self.showImage(event.data)
         self.imgPath = event.data
 
@@ -294,8 +294,7 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.inProgressFrame = ctk.CTkFrame(self)
-        self.inProgressFrame.grid(column=0, row=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
-        # self.inProgressFrame.grid_propagate(False)
+        self.inProgressFrame.grid(column=0, row=0, rowspan=2, padx=(10, 10), pady=(10, 10), sticky="nsew")
 
             #-------------------------------------------------------------
 
@@ -329,7 +328,7 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.itemListFrame = ctk.CTkFrame(self)
-        self.itemListFrame.grid(column=1, row=0, rowspan=2, padx=(0, 10), pady=(10, 10), sticky="nsew")
+        self.itemListFrame.grid(column=1, row=0, padx=(0, 10), pady=(10, 10), sticky="nsew")
         self.itemListFrame.grid_rowconfigure((0, 3), weight=1)
 
             #-------------------------------------------------------------
@@ -382,10 +381,41 @@ class Page2(ctk.CTkFrame):
 
         #-----------------------------------------------------------------
 
+        self.settingsFrame = ctk.CTkFrame(self)
+        self.settingsFrame.grid(column=1, row=1, rowspan=2, padx=(0, 10), pady=(0, 10), sticky="nsew")
+        self.settingsFrame.grid_rowconfigure((0, 1), weight=1)
+        self.settingsFrame.grid_columnconfigure((0, 1), weight=1)
+
+            #-------------------------------------------------------------
+
+        self.speedLabel = ctk.CTkLabel(self.settingsFrame, text="Speed (%)")
+        self.speedLabel.grid(column=0, row=0, padx=(0, 20), pady=(0, 10), sticky="se")
+
+        self.speedVar = ctk.StringVar(value="25")
+        self.speedEntry = ctk.CTkEntry(self.settingsFrame, textvariable=self.speedVar, width=40)
+        self.speedEntry.grid(column=1, row=0, padx=(0, 0), pady=(0, 10), sticky="sw")
+
+
+
+        self.motorSyncLabel = ctk.CTkLabel(self.settingsFrame, text="Simul. axis")
+        self.motorSyncLabel.grid(column=0, row=1, padx=(0, 20), pady=(0, 0), sticky="ne")
+
+        self.motorSyncVar = ctk.BooleanVar(value=False)
+        self.motorSyncCheckbox = ctk.CTkCheckBox (
+            self.settingsFrame,
+            text=None,
+            variable=self.motorSyncVar,
+            onvalue=True,
+            offvalue=False,
+            width=24
+        )
+        self.motorSyncCheckbox.grid(column=1, row=1, padx=(0, 0), pady=(0, 0), sticky="nw")
+
+        #-----------------------------------------------------------------
+
         self.progressFrame = ctk.CTkFrame(self)
-        self.progressFrame.grid(column=0, row=1, padx=(10, 10), pady=(0, 10), sticky="nsew")
+        self.progressFrame.grid(column=0, row=2, padx=(10, 10), pady=(0, 10), sticky="nsew")
         self.progressFrame.grid_columnconfigure((0, 2), weight=1)
-        # self.progressFrame.grid_propagate(False)
 
             #-------------------------------------------------------------
 
@@ -402,8 +432,7 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.infoFrame = ctk.CTkFrame(self)
-        self.infoFrame.grid(column=0, row=2, columnspan= 2, padx=(10, 10), pady=(0, 10), sticky="nsew")
-        # self.infoFrame.grid_propagate(False)
+        self.infoFrame.grid(column=0, row=3, columnspan=2, padx=(10, 10), pady=(0, 10), sticky="nsew")
 
             #-------------------------------------------------------------
 
@@ -417,15 +446,15 @@ class Page2(ctk.CTkFrame):
 
         self.manageButton = ctk.CTkButton(
             self, text="Pause", width=100, height=30, fg_color="#696969", command=self.pause)
-        self.manageButton.grid(column=0, row=3, columnspan=2, padx=(0, 120), pady=(0, 10), sticky="ne")
+        self.manageButton.grid(column=0, row=4, columnspan=2, padx=(0, 120), pady=(0, 10), sticky="ne")
 
         self.exitButton = ctk.CTkButton(
             self, text="Cancel", width=100, height=30, fg_color="#696969", command=self.on_closing)
-        self.exitButton.grid(column=0, row=3, columnspan=2, padx=(0, 10), pady=(0, 10), sticky="ne")
+        self.exitButton.grid(column=0, row=4, columnspan=2, padx=(0, 10), pady=(0, 10), sticky="ne")
 
         #-----------------------------------------------------------------
 
-        threading.Thread(target=self.onStarting).start()
+        threading.Thread(target=self.startup).start() # without threading page2 is never opened (stuck in a loop)
 
     #Functions -----------------------------------------------------------
 
@@ -444,6 +473,7 @@ class Page2(ctk.CTkFrame):
 
     def refill(self):
         self.isPaused = True
+        self.insertInfoTextBox("warning", "Printing has been paused.")
         self.insertInfoTextBox("warning", "Please refill all colours.")
         self.mbox.send("refill")
         self.manageButton.configure(text="Continue", text_color="#ff8800", command=self.resume)
@@ -456,25 +486,25 @@ class Page2(ctk.CTkFrame):
 
     def startError(self):
         self.isStarting = False
-        self.manageButton.configure(text="Retry", text_color="#ff8800", command=lambda: threading.Thread(target=self.onStarting).start())
+        self.manageButton.configure(text="Retry", text_color="#ff8800", command=lambda: threading.Thread(target=self.startup).start())
 
     def resetManageButton(self):
         self.manageButton.configure(text="Pause", text_color="#ffffff", command=self.pause)
 
         #-----------------------------------------------------------------
     
-    def onStarting(self):
-        if self.isStarting == True:
+    def startup(self):
+        if self.isStarting:
             return
         
         self.isStarting = True
 
-        #update content
+        #update content on page2
         self.updateContent()
 
         #start mindstorms
         ev3Start = self.startMindstorms()
-        if ev3Start == False:
+        if not ev3Start:
             self.startError()
             return
 
@@ -532,24 +562,23 @@ class Page2(ctk.CTkFrame):
         self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.insertInfoTextBox("msg", "Connection to EV3 is attempted...")
         try:
-            self.ssh.connect(
-                "ev3dev",
-                username="robot",
-                password="maker",
-                look_for_keys=False,   # Add this
-                allow_agent=False      # And this
-            )
+            self.ssh.connect(hostname="ev3dev", username="robot",password="maker",look_for_keys=False,allow_agent=False)
             self.insertInfoTextBox("msg", "Connection to EV3 has been established.")
-        except Exception as e:
-            print(e)
+        except Exception:
             self.insertInfoTextBox("error", "No connection with EV3 possible.")
+            self.startError()
             return False
         
         time.sleep(1)
         
         self.insertInfoTextBox("msg", "Programme is started on EV3...")
         brickrun_command = f'brickrun -r --directory="/home/robot/PixelArtRobot/robot" "/home/robot/PixelArtRobot/robot/main.py"'
-        self.ssh.exec_command(brickrun_command)
+        try:
+            self.ssh.exec_command(brickrun_command)
+        except Exception:
+            self.insertInfoTextBox("error", "The programme could not be started.")
+            self.startError()
+            return False
 
         time.sleep(5)
         self.insertInfoTextBox("msg", "Programme has started successfully.")

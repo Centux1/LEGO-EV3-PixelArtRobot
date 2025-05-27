@@ -392,4 +392,4 @@ msg = mbox.read()
 if msg == "run":
     ev3.speaker.set_volume(100)
     threading.Thread(target=receiveMessages, args=(mbox,)).start()
-    run(lego, mbox)
+    run(lego, mbox) # test

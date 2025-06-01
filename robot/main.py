@@ -178,7 +178,8 @@ class PixelArtRobot():
             wait(100)
         
         wait(1000)
-        self.currCords = cords
+        if not self.isPaused:
+            self.currCords = cords
 
     #-------------------------------------------------------------------------
 
@@ -188,67 +189,15 @@ class PixelArtRobot():
 
         self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=40)
         self.pickedup = True
-        # angleZ = self.motorZ.angle()
 
         self.motorZ.run_target(500, 0)
         self.motorZ.stop()
-
-        # for adj in adjustments:
-        #     motor1, angle1, motor2, angle2 = adj
-        #     print(angleZ)
-
-        #     if angleZ >= -190:
-        #         motor1.run_angle(800, calculate_degree(angle1), then=Stop.HOLD)
-        #         motor2.run_angle(800, calculate_degree(angle2), then=Stop.HOLD)
-
-        #         self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=40)
-        #         angleZ = self.motorZ.angle()
-        #         self.motorZ.run_target(400, 0)
-        #     else:
-        #         break        
-
 
     def place(self):
         if self.isPaused:
             return
 
-        # if (self.ev3.battery.voltage() >= 7500):
-        #     place_dl = 40
-        # else:
-        #     place_dl = 50
-
         place_dl = 60
-        test_dl = 31
-
-        # self.motorZ.run_until_stalled(50, then=Stop.HOLD, duty_limit=test_dl)
-        # angleZ = self.motorZ.angle()
-        # self.motorZ.run_target(200, 0)
-
-        # print(angleZ)
-
-        # if angleZ <= 90:
-        #     print("ERROR")
-
-        #     for adj in adjustments:
-        #         angleX, angleY = adj
-        #         print(angleZ)
-
-        #         if angleZ <= 90:
-        #             if angleX != 0:
-        #                 self.motorX.run_angle(motorSpeed, calculate_degree(angleX, "x", self.motorX.angle()), then=Stop.HOLD)
-
-        #             if angleY != 0:
-        #                 self.motorY.run_angle(motorSpeed, calculate_degree(angleY, "y", self.motorY.angle()), then=Stop.HOLD)
-
-        #             wait(1000)
-
-        #             self.motorZ.run_until_stalled(50, then=Stop.HOLD, duty_limit=test_dl)
-        #             angleZ = self.motorZ.angle()
-        #             self.motorZ.run_target(200, 0)
-        #         else:
-        #             break
-
-        #         print("--------------------")
 
         self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=place_dl)
         self.placed = True
@@ -279,28 +228,31 @@ class PixelArtRobot():
                 self.ev3.screen.draw_text(10, 10, "Paused")
                 if self.refill:
                     self.ev3.screen.draw_text(10, 40, "Refill all colours.")
-                    self.mbox.send("recalibration")
+                    self.comm_mbox.send("recalibration")
                     self.calibration()
                     recalibration = False
-                    self.mbox.send("recalibrated")
+                    self.comm_mbox.send("recalibrated")
 
             while self.isPaused:
                 wait(10)
 
             if recalibration:
-                self.mbox.send("recalibration")
+                self.comm_mbox.send("recalibration")
                 self.calibration()
                 recalibration = False
-                self.mbox.send("recalibrated")
+                self.comm_mbox.send("recalibrated")
             
             cord, color = lego.pop(0)
+            print(cord, color)
 
             x, y = map(int, cord.split(","))
             self.ev3.screen.clear()
             self.ev3.screen.draw_text(10, 10, str((x, y)))
             self.ev3.screen.draw_text(10, 40, str(color).upper())
 
+            print(self.pickedup)
             if self.pickedup:
+                print("pickedup")
                 self.pickedup = False
             else:
                 self.drive(colorCords[color])
@@ -311,65 +263,19 @@ class PixelArtRobot():
             self.place()
             
             if self.placed:
-                self.mbox.send(cord)
-                self.mbox.send(color)
+                self.pickedup = False
+                self.pixel_mbox.send(cord)
+                self.pixel_mbox.send(color)
 
             if any(count >= 14 for count in refillItemCount.values()):
                 self.isPaused = True
                 self.refill = True
-                self.mbox.send("refill")
+                self.comm_mbox.send("refill")
                 refillItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white": 0}
 
         self.drive((0,0))
-        self.mbox.send("finished")
+        self.pixel_mbox.send("finished")
     
-    #-------------------------------------------------------------------------
-
-    def test(self):
-        
-        calibration()
-
-        # drive((31,31))
-        # pickup()
-        # wait(6000)
-        # drive((0,0))
-        # pickup()
-
-        # for i in range(0, 31):
-        #     drive((i, i))
-        #     pickup()
-        #     drive((0,0))
-        #     pickup()
-
-        # import random
-        # while True:
-        #     x = random.randint(0, 31)
-        #     y = random.randint(0, 31)
-        #     drive((x, y))
-        #     pickup()
-
-
-        drive((20,33))
-        pickup()
-        drive((1,1))
-        place()
-
-
-        drive((22,33))
-        pickup()
-        drive((2,2))
-        place()
-
-        drive((24,33))
-        pickup()
-        drive((3,3))
-        place()
-
-        drive((26,33))
-        pickup()
-        drive((4,4))
-        place()
-
     #-------------------------------------------------------------------------
 
     def pause(self):
@@ -385,8 +291,8 @@ class PixelArtRobot():
 
     def receiveMessages(self):
         while True:
-            self.mbox.wait()
-            msg = self.mbox.read()
+            self.comm_mbox.wait()
+            msg = self.comm_mbox.read()
 
             if msg == "pause":
                 self.pause()
@@ -403,8 +309,8 @@ class PixelArtRobot():
     def pauseButton(self):
         while True:
             if Button.CENTER in self.ev3.buttons.pressed():
+                self.comm_mbox.send("pause")
                 self.pause()
-                self.mbox.send("pause")
             wait(10)
 
     #-------------------------------------------------------------------------
@@ -416,29 +322,30 @@ class PixelArtRobot():
         self.ev3.speaker.beep(900)
 
         server = BluetoothMailboxServer()
-        self.mbox = TextMailbox("pixel", server)
+        self.pixel_mbox = TextMailbox("pixel", server)
+        self.comm_mbox = TextMailbox("comm", server)
 
         server.wait_for_connection()
 
-        self.mbox.wait()
+        self.pixel_mbox.wait()
 
-        lego = self.mbox.read()
+        lego = self.pixel_mbox.read()
         lego = eval(lego)
 
         self.ev3.speaker.play_file(SoundFile.CONFIRM)
-        self.mbox.send("received lego data")
+        self.pixel_mbox.send("received lego data")
 
         threading.Thread(target=self.pauseButton).start()
+        threading.Thread(target=self.receiveMessages).start()
         self.calibration()
 
         self.ev3.speaker.play_file(SoundFile.READY)
-        self.mbox.send("ready")
+        self.pixel_mbox.send("ready")
 
-        self.mbox.wait()
-        msg = self.mbox.read()
+        self.pixel_mbox.wait()
+        msg = self.pixel_mbox.read()
         if msg == "run":
-            self.ev3.speaker.set_volume(100)
-            threading.Thread(target=self.receiveMessages).start()
+            self.ev3.speaker.set_volume(10)
             self.run(lego)
 
 if __name__ == "__main__":

@@ -44,7 +44,6 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.printImage = None
         self.needItemCount = {}
         self.placedItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white":0}
-        self.refillItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white":0}
         self.lego = {}
         self.ssh = None
 
@@ -485,10 +484,11 @@ class Page2(ctk.CTkFrame):
     def on_closing(self):
         self.master.close()
 
-    def pause(self):
+    def pause(self, ev3=False):
         self.isPaused = True
         self.insertInfoTextBox("warning", "Printing has been paused.")
-        self.comm_mbox.send("pause")
+        if not ev3:
+            self.comm_mbox.send("pause")
         self.manageButton.configure(text="Continue", text_color="#ff8800", command=self.resume)
 
     def refill(self):
@@ -552,7 +552,11 @@ class Page2(ctk.CTkFrame):
 
         self.insertInfoTextBox("msg", "Printing data was sent successfully.")
 
-        #claibration
+        #enable settings
+        self.speedEntry.configure(state="normal")
+        self.parallelAxisCheckbox.configure(state="normal")
+
+        #calibration
         self.insertInfoTextBox("msg", "Calibration of the EV3 has started...")
 
         self.pixel_mbox.wait() 
@@ -616,9 +620,6 @@ class Page2(ctk.CTkFrame):
         self.pixel_mbox.send("run")
         self.insertInfoTextBox("msg", "Printing has started...")
 
-        self.speedEntry.configure(state="normal")
-        self.parallelAxisCheckbox.configure(state="normal")
-
         self.resetManageButton()
         self.startTime = time.time()
         self.progressAnimation()
@@ -629,11 +630,21 @@ class Page2(ctk.CTkFrame):
     #---------------------------------------------------------------------
 
     def printingDataProcessing(self):
-        while not self.isPaused:
-            self.pixel_mbox.wait()
-            cord = self.pixel_mbox.read()
+        totalNeedCount = sum(self.master.needItemCount.values())
+        totalPlacedCount = 0
 
-            if cord == "finished":
+        while True:
+            self.pixel_mbox.wait()
+            data = self.pixel_mbox.read()
+            data = eval(data)
+
+            if len(data) == 3:
+                x, y = map(int, data[1].split(","))
+                cord = (x, 31-y)
+                color = data[2]
+
+
+            if data[0] == "finished":
                 self.isPaused = True
                 self.progressAnimationBar.set(1)
                 hours, remainder = divmod((time.time() - self.startTime), 3600)
@@ -642,30 +653,43 @@ class Page2(ctk.CTkFrame):
                     text=f"    -    Finished after {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds.")
                 break
 
-            self.pixel_mbox.wait()
-            color = self.pixel_mbox.read()
-            cord = ast.literal_eval(cord)
-            cord = (int(cord[0]), 31-int(cord[1]))
+            elif data[0] == "couldnt placed":
+                self.printingImage.putpixel(cord, (255, 0, 0))
 
-            self.printingImage.putpixel(cord, COLOR_LIST[color])
-            image = self.printingImage.resize((320,320), Image.NEAREST)
-            printingCTkImg = ctk.CTkImage(light_image=image, dark_image=image, size=(320, 320))
-            self.printLabel.configure(image=printingCTkImg)
+                self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
 
-            self.master.placedItemCount[color] += 1
-            self.master.refillItemCount[color] += 1
-            self.updateItemCount()
+            elif data[0] == "couldnt placed with stone":
+                self.printingImage.putpixel(cord, (255, 0, 0))
 
-            totalNeedCount = sum(self.master.needItemCount.values())
-            totalPlacedCount = sum(self.master.placedItemCount.values())
+                self.pause(True)
+                self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
+                self.insertInfoTextBox("warning", "Please remove the stones on the placement arm.")
+                
+            elif data[0] == "multiple stones":
+                self.pause(True)
+                self.printingImage.putpixel(cord, (255, 0, 0))
+                self.insertInfoTextBox("warning", "The EV3 has picked up multiple stones.")
+                self.insertInfoTextBox("warning", "Please remove the stones on the placement arm.")
+
+            elif data[0] == "placed":
+                self.printingImage.putpixel(cord, COLOR_LIST[color])
+
+                self.master.placedItemCount[color] += 1
+                self.updateItemCount()
+                
+            totalPlacedCount += 1
+
             processPercentage = totalPlacedCount / totalNeedCount
-
             self.progressBar.set(processPercentage)
             self.progressPercentageLabel.configure(text=f"{processPercentage*100:.0f}%")
 
             betweenTime = time.time() - self.startTime
             timeOnePart = betweenTime / totalPlacedCount
             self.remainingPrintingTime = (totalNeedCount - totalPlacedCount) * timeOnePart
+
+            image = self.printingImage.resize((320,320), Image.NEAREST)
+            printingCTkImg = ctk.CTkImage(light_image=image, dark_image=image, size=(320, 320))
+            self.printLabel.configure(image=printingCTkImg)
 
     #---------------------------------------------------------------------
 
@@ -742,7 +766,7 @@ class Page2(ctk.CTkFrame):
                     self.manageButton.configure(state="normal")
 
             elif msg == "pause":
-                self.pause()
+                self.pause(True)
 
     def speedVarChange(self, *args):
         speed = self.speedVar.get()

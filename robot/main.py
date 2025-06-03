@@ -98,6 +98,9 @@ class PixelArtRobot():
         self.pickedup = False
         self.placed = False
 
+        self.pickedupAngle = 0
+        self.placedAngle = 0
+
     #-------------------------------------------------------------------------
 
     def calculate_degree(self, cord, type=None, currentDegree=0):
@@ -109,13 +112,10 @@ class PixelArtRobot():
         
         if type != None:
             if currentDegree > degree and (self.currCords[0] if type == 'x' else self.currCords[1]) != cord:
-                # print(type + " pull")
                 degree = self.calculate_degree(cord+self.pullCorrection[type])
 
             if currentDegree < degree and (self.currCords[0] if type == 'x' else self.currCords[1]) != cord:
-                # print(type + " push")
                 degree = self.calculate_degree(cord+self.pushCorrection[type])
-
         
         return degree
 
@@ -144,15 +144,17 @@ class PixelArtRobot():
         self.motorY.stop()
         self.motorX.stop()
 
-        self.motorZ.run_until_stalled(500, then=Stop.HOLD, duty_limit=40)
-        # self.motorZ.run_time(-500, 300)
-        self.motorZ.run_time(-500, 550)
-        wait(1000)
-        self.motorZ.stop()
+        if not self.isCalibrated:
+            self.motorZ.run_until_stalled(500, then=Stop.HOLD, duty_limit=40)
+            # self.motorZ.run_time(-500, 300)
+            self.motorZ.run_time(-500, 550)
+            wait(1000)
+            self.motorZ.stop()
+
+            self.motorZ.reset_angle(0)
 
         self.motorX.reset_angle(0)
         self.motorY.reset_angle(0)
-        self.motorZ.reset_angle(0)
 
         self.isCalibrated = True
         
@@ -190,6 +192,8 @@ class PixelArtRobot():
         self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=40)
         self.pickedup = True
 
+        self.pickedupAngle = self.motorZ.angle()
+
         self.motorZ.run_target(500, 0)
         self.motorZ.stop()
 
@@ -201,6 +205,9 @@ class PixelArtRobot():
 
         self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=place_dl)
         self.placed = True
+
+        self.placedAngle = self.motorZ.angle()
+
         self.motorZ.run_target(500, 0)
         wait(1000)
         self.motorZ.stop()           
@@ -216,13 +223,13 @@ class PixelArtRobot():
             "white": (26, 33)
         }
         recalibration = False
+        placeAttempt = 0
 
         while len(lego) != 0:
 
             if self.isPaused:
                 if not self.placed:
                     lego.insert(0, [cord, color])
-                self.placed = False
                 recalibration = True
                 self.ev3.screen.clear()
                 self.ev3.screen.draw_text(10, 10, "Paused")
@@ -237,35 +244,70 @@ class PixelArtRobot():
                 wait(10)
 
             if recalibration:
+                self.ev3.screen.clear()
+                self.ev3.screen.draw_text(10, 10, "Recalibration...")
                 self.comm_mbox.send("recalibration")
                 self.calibration()
                 recalibration = False
                 self.comm_mbox.send("recalibrated")
             
             cord, color = lego.pop(0)
-            print(cord, color)
+            self.placed = False
 
             x, y = map(int, cord.split(","))
             self.ev3.screen.clear()
             self.ev3.screen.draw_text(10, 10, str((x, y)))
             self.ev3.screen.draw_text(10, 40, str(color).upper())
 
-            print(self.pickedup)
             if self.pickedup:
-                print("pickedup")
                 self.pickedup = False
             else:
                 self.drive(colorCords[color])
                 self.pickup()
                 refillItemCount[color] += 1
 
+            if self.pickedupAngle < 200 and not self.isPaused:
+                print("Picked up multiple stones")
+                self.pause()
+                self.pickedup = False
+                self.pixel_mbox.send(["multiple stones", cord, color])
+                lego.insert(0, [cord, color])
+
             self.drive((x, y))
             self.place()
-            
-            if self.placed:
-                self.pickedup = False
-                self.pixel_mbox.send(cord)
-                self.pixel_mbox.send(color)
+
+            if not self.isPaused:
+                if 170 < self.placedAngle < 220: # Successfully placed
+                    print("Successfully placed")
+                    placeAttempt = 0
+                    self.pickedup = False
+                    self.pixel_mbox.send(["placed", cord, color])
+
+                elif self.placedAngle > 220: # Not placed and not picked up
+                    print("Not placed and not picked up")
+
+                    if placeAttempt >= 2:
+                        self.pickedup = False
+                        placeAttempt = 0
+                        self.pixel_mbox.send(["couldnt placed", cord, color])
+                    else:
+                        placeAttempt += 1
+                        self.pickedup = False
+                        lego.insert(0, [cord, color])
+
+                elif self.placedAngle < 170: # Not placed but picked up
+                    print("Not placed but picked up")
+
+                    if placeAttempt >= 2:
+                        self.pickedup = False
+                        placeAttempt = 0
+                        self.pause()
+                        self.pixel_mbox.send(["couldnt placed with stone", cord, color])
+                    else:
+                        placeAttempt += 1
+                        self.pickedup = True
+                        refillItemCount[color] -= 1
+                        lego.insert(0, [cord, color])
 
             if any(count >= 14 for count in refillItemCount.values()):
                 self.isPaused = True
@@ -315,7 +357,18 @@ class PixelArtRobot():
 
     #-------------------------------------------------------------------------
 
+    def test(self):
+        self.calibration()
+
+        for x in range(32):
+            self.drive((x,30))
+            self.place()
+
+        self.drive((3,3))
+
     def start(self):
+        # self.test()
+
         self.ev3.speaker.set_volume(10)
         self.ev3.speaker.beep(500)
         self.ev3.speaker.beep(700)

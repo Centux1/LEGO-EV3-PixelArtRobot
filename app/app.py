@@ -643,7 +643,6 @@ class Page2(ctk.CTkFrame):
                 cord = (x, 31-y)
                 color = data[2]
 
-
             if data[0] == "finished":
                 self.isPaused = True
                 self.progressAnimationBar.set(1)
@@ -659,17 +658,22 @@ class Page2(ctk.CTkFrame):
                 self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
 
             elif data[0] == "couldnt placed with stone":
-                self.printingImage.putpixel(cord, (255, 0, 0))
-
                 self.pause(True)
+                self.printingImage.putpixel(cord, (255, 0, 0))
                 self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
-                self.insertInfoTextBox("warning", "Please remove the stones on the placement arm.")
+                self.insertInfoTextBox("warning", "Please remove the stone on the placement arm.")
                 
             elif data[0] == "multiple stones":
                 self.pause(True)
                 self.printingImage.putpixel(cord, (255, 0, 0))
                 self.insertInfoTextBox("warning", "The EV3 has picked up multiple stones.")
                 self.insertInfoTextBox("warning", "Please remove the stones on the placement arm.")
+
+            elif data[0] == "no stone":
+                self.pause(True)
+                self.insertInfoTextBox("warning", f"The EV3 could not pick up {color}.")
+                self.insertInfoTextBox("warning", "Please check the storage location of the stone.")
+
 
             elif data[0] == "placed":
                 self.printingImage.putpixel(cord, COLOR_LIST[color])

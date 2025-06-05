@@ -95,27 +95,32 @@ class PixelArtRobot():
 
         self.currCords = (-1000, -1000)
 
-        self.pickedup = False
-        self.placed = False
-
         self.pickedupAngle = 0
         self.placedAngle = 0
 
     #-------------------------------------------------------------------------
 
     def calculate_degree(self, cord, type=None, currentDegree=0):
+        print("OK")
         distance_cm = self.onePlate * cord
 
         scope = 3.14159265359 * self.gearDiameter
         rotations = distance_cm / scope
         degree = rotations * 360
+
+        if self.ev3.battery.voltage() > 7900:
+            pullCorrection = {"x": 0.05, "y": -0.05} # x,y negative (31-0)
+            pushCorrection = {"x": 0.05, "y": -0.05} # x,y positive (0-31)
+        else:
+            pullCorrection = {"x": 0.1, "y": -0.1}
+            pushCorrection = {"x": 0.05, "y": 0}
         
         if type != None:
             if currentDegree > degree and (self.currCords[0] if type == 'x' else self.currCords[1]) != cord:
-                degree = self.calculate_degree(cord+self.pullCorrection[type])
+                degree = self.calculate_degree(cord+pullCorrection[type])
 
             if currentDegree < degree and (self.currCords[0] if type == 'x' else self.currCords[1]) != cord:
-                degree = self.calculate_degree(cord+self.pushCorrection[type])
+                degree = self.calculate_degree(cord+pushCorrection[type])
         
         return degree
 
@@ -189,7 +194,7 @@ class PixelArtRobot():
         if self.isPaused:
             return
         
-        self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=50)
+        self.motorZ.run_until_stalled(400, then=Stop.HOLD, duty_limit=60)
 
         self.pickedupAngle = self.motorZ.angle()
 
@@ -219,13 +224,15 @@ class PixelArtRobot():
             "white": (26, 33.1)
         }
         recalibration = False
+        placed = False
+        pickedup = False
         placeAttempt = 0
 
         while len(lego) != 0:
             
             # Handle pause and refill
             if self.isPaused:
-                if not self.placed:
+                if not placed:
                     lego.insert(0, [cord, color])
                 recalibration = True
                 self.ev3.screen.clear()
@@ -250,33 +257,34 @@ class PixelArtRobot():
             
             # Get stone
             cord, color = lego.pop(0)
-            self.placed = False
+            placed = False
             x, y = map(int, cord.split(","))
             self.ev3.screen.clear()
             self.ev3.screen.draw_text(10, 10, str((x, y)))
             self.ev3.screen.draw_text(10, 40, str(color).upper())
 
             # Pickup logic
-            if not self.pickedup:
+            if not pickedup:
                 self.drive(colorCords[color])
                 self.pickup()
                 refillItemCount[color] += 1
 
             if not self.isPaused:
-                if 215 < self.pickedupAngle < 225: # Probably successfully picked up
-                    self.pickedup = True
+                if 240 < self.pickedupAngle < 250: # Probably successfully picked up
+                    print("Probably successfully picked up")
+                    pickedup = True
 
-                elif self.pickedupAngle < 200: # Picked up multiple stones
+                elif self.pickedupAngle < 220: # Picked up multiple stones
                     print("Picked up multiple stones")
                     self.pause()
-                    self.pickedup = False
+                    pickedup = False
                     self.pixel_mbox.send(["multiple stones", cord, color])
                     lego.insert(0, [cord, color])
 
-                elif self.pickedupAngle > 240: # No stone in storage location
+                elif self.pickedupAngle > 250: # No stone in storage location
                     print("No stone in storage location")
                     self.pause()
-                    self.pickedup = False
+                    pickedup = False
                     self.pixel_mbox.send(["no stone", cord, color])
                     lego.insert(0, [cord, color])
 
@@ -288,15 +296,15 @@ class PixelArtRobot():
                 if 190 < self.placedAngle < 200: # Successfully placed
                     print("Successfully placed")
                     placeAttempt = 0
-                    self.pickedup = False
-                    self.placed = True
+                    pickedup = False
+                    placed = True
                     self.pixel_mbox.send(["placed", cord, color])
 
                 elif self.placedAngle > 220: # Not placed and not picked up
                     print("Not placed and not picked up")
-                    self.pickedup = False
+                    pickedup = False
                     if placeAttempt >= 2:
-                        self.placed = True
+                        placed = True
                         placeAttempt = 0
                         self.pixel_mbox.send(["couldnt placed", cord, color])
                     else:
@@ -307,15 +315,15 @@ class PixelArtRobot():
                     print("Not placed but picked up")
 
                     if placeAttempt >= 2:
-                        self.pickedup = False
-                        self.placed = True
+                        pickedup = False
+                        placed = True
 
                         placeAttempt = 0
                         self.pause()
                         self.pixel_mbox.send(["couldnt placed with stone", cord, color])
                     else:
                         placeAttempt += 1
-                        self.pickedup = True
+                        pickedup = True
                         refillItemCount[color] -= 1
                         lego.insert(0, [cord, color])
 
@@ -326,8 +334,10 @@ class PixelArtRobot():
                 self.comm_mbox.send("refill")
                 refillItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white": 0}
 
-        self.drive((0,0))
+        self.ev3.screen.clear()
+        self.ev3.screen.draw_text(10, 10, "Finished!")
         self.pixel_mbox.send(["finished"])
+        self.drive((0,0))
     
     #-------------------------------------------------------------------------
 
@@ -369,13 +379,14 @@ class PixelArtRobot():
     #-------------------------------------------------------------------------
 
     def test(self):
-        self.calibration()
+        self.pickup()
+        # self.calibration()
 
-        for x in range(32):
-            self.drive((x,30))
-            self.place()
+        # for x in range(32):
+        #     self.drive((x,30))
+        #     self.place()
 
-        self.drive((3,3))
+        # self.drive((3,3))
 
     def start(self):
         # self.test()

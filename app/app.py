@@ -7,7 +7,7 @@ import datetime
 import time
 import threading
 import paramiko
-import ast
+import ctypes
 
 from pybricksPC.messaging import BluetoothMailboxClient, TextMailbox
 
@@ -33,6 +33,10 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
     #GUI -----------------------------------------------------------------
     def __init__(self):
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        
+        #-----------------------------------------------------------------
+
         super().__init__()
         self.title("PixelArtRobot")
         self.geometry(f"{800}x{530}")
@@ -40,6 +44,12 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.protocol("WM_DELETE_WINDOW", self.close)
 
         #-----------------------------------------------------------------
+
+        dpi_factor = self.winfo_fpixels('1i') / 144
+        ctk.set_widget_scaling(dpi_factor)          
+        ctk.set_window_scaling(dpi_factor)  
+        
+#-----------------------------------------------------------------
         
         self.printImage = None
         self.needItemCount = {}
@@ -603,7 +613,9 @@ class Page2(ctk.CTkFrame):
             except Exception:
                 if attempt < 2:
                     self.insertInfoTextBox("warning", f"Connection to EV3 Mailbox failed (attempt {attempt+1}/3). Retrying in {waitTime}s...")
+                    print("1")
                     time.sleep(waitTime)
+                    print("2")
                     waitTime += 2
                 else:
                     return False
@@ -650,6 +662,9 @@ class Page2(ctk.CTkFrame):
                 minutes, seconds = divmod(remainder, 60)
                 self.progressRemainingTimeLabel.configure(
                     text=f"    -    Finished after {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds.")
+                self.manageButton.configure(state="disabled")
+                self.exitButton.configure(text="Exit")
+                self.insertInfoTextBox("msg", "The EV3 has finished printing.")
                 break
 
             elif data[0] == "couldnt placed":
@@ -698,7 +713,7 @@ class Page2(ctk.CTkFrame):
     #---------------------------------------------------------------------
 
     def timeAnimation(self):
-        if self.remainingPrintingTime != None and not self.isPaused:
+        if self.remainingPrintingTime != None and self.remainingPrintingTime > 0 and not self.isPaused:
             self.remainingPrintingTime -= 1
 
             hours, remainder = divmod(self.remainingPrintingTime, 3600)

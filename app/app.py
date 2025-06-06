@@ -1,4 +1,3 @@
-from tkinter import scrolledtext
 import customtkinter as ctk
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
@@ -8,11 +7,25 @@ import datetime
 import time
 import threading
 import paramiko
-import ast
+import ctypes
 
-from pybricks2.messaging import BluetoothMailboxClient, TextMailbox
+from pybricksPC.messaging import BluetoothMailboxClient, TextMailbox
 
 from imgProcessing import convert_image
+
+EV3_HOST = "ev3dev"
+EV3_USER = "robot"
+EV3_PASS = "maker"
+EV3_MAILBOX_SERVER = "F4:84:4C:CA:82:23"
+EV3_MAIN_PATH = "/home/robot/PixelArtRobot/robot/main.py"
+EV3_MAIN_DIR = "/home/robot/PixelArtRobot/robot"
+COLOR_LIST = {
+    "black": (5, 19, 29),
+    "dark_bluish_grey": (108, 110, 104),
+    "light_bluish_grey": (160, 165, 169),
+    "white": (255, 255, 255)
+}
+IMGSIZE = 320
 
 ctk.set_appearance_mode("dark")
 
@@ -20,27 +33,39 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
     #GUI -----------------------------------------------------------------
     def __init__(self):
-        super().__init__()
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        
+        #-----------------------------------------------------------------
 
-        # basic config
+        super().__init__()
         self.title("PixelArtRobot")
         self.geometry(f"{800}x{530}")
         self.resizable(width=False, height=False)
-
-        # when the window is closed
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.protocol("WM_DELETE_WINDOW", self.close)
 
         #-----------------------------------------------------------------
 
-        imagePath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "img")
+        dpi_factor = self.winfo_fpixels('1i') / 144
+        ctk.set_widget_scaling(dpi_factor)          
+        ctk.set_window_scaling(dpi_factor)  
+        
+        #-----------------------------------------------------------------
+        
         self.printImage = None
         self.needItemCount = {}
         self.placedItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white":0}
-        self.refillItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white":0}
         self.lego = {}
+        self.ssh = None
 
         #-----------------------------------------------------------------
 
+        self._loadImages()
+        self.show_frame(Page1)
+
+    #---------------------------------------------------------------------
+
+    def _loadImages(self):
+        imagePath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "img")
         self.arrowRight = ctk.CTkImage(
             light_image=Image.open(os.path.join(imagePath, "arrow_right.png")),
             dark_image=Image.open(os.path.join(imagePath, "arrow_right.png")), size=(64, 64))
@@ -69,27 +94,24 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             light_image=Image.open(os.path.join(imagePath, "white.png")),
             dark_image=Image.open(os.path.join(imagePath, "white.png")), size=(32, 32))
 
-        #-----------------------------------------------------------------
+    #---------------------------------------------------------------------
 
-        self.show_frame(Page1)
-
-    #Functions -----------------------------------------------------------
-
-    def on_closing(self):
+    def close(self):
         try:
+            if self.ssh != None:
+                self.ssh.exec_command("pkill -f main.py")
+                self.ssh.exec_command("exit")
             self.destroy()
         except:
             pass
 
-        #-----------------------------------------------------------------
+    #---------------------------------------------------------------------
 
     def show_frame(self, page):
         frame = page(master=self)
         frame.grid(row=0, column=0, sticky="nsew")
 
         frame.tkraise()
-
-        #-----------------------------------------------------------------
 
 #-------------------------------------------------------------------------
 
@@ -106,9 +128,11 @@ class Page1(ctk.CTkFrame):
         self.imgPath = ""
         self.processedImg = None
 
-        self.IMGSIZE = 320
-
         #-----------------------------------------------------------------
+
+        self._setup_ui()
+
+    def _setup_ui(self):
 
         self.imageFrame = ctk.CTkFrame(self)
         self.imageFrame.grid(column=0, row=0, columnspan=2, padx=(10, 10), pady=(10, 10), sticky="nsew")
@@ -117,7 +141,7 @@ class Page1(ctk.CTkFrame):
 
             #-------------------------------------------------------------
 
-        self.selectImageFrame = ctk.CTkFrame(self.imageFrame, width=self.IMGSIZE, height=self.IMGSIZE, cursor="hand2")
+        self.selectImageFrame = ctk.CTkFrame(self.imageFrame, width=IMGSIZE, height=IMGSIZE, cursor="hand2")
         self.selectImageFrame.grid(column=0, row=0, padx=(10, 10), pady=(10, 10), sticky="w")
         self.selectImageFrame.columnconfigure(0, weight=1)
         self.selectImageFrame.rowconfigure(0, weight=1)
@@ -137,7 +161,7 @@ class Page1(ctk.CTkFrame):
 
             #-------------------------------------------------------------
 
-        self.processedImageFrame = ctk.CTkFrame(self.imageFrame, width=self.IMGSIZE, height=self.IMGSIZE)
+        self.processedImageFrame = ctk.CTkFrame(self.imageFrame, width=IMGSIZE, height=IMGSIZE)
         self.processedImageFrame.grid(column=2, row=0, padx=(10, 10), pady=(10, 10), sticky="e")
         self.processedImageFrame.columnconfigure(0, weight=1)
         self.processedImageFrame.rowconfigure(0, weight=1)
@@ -210,27 +234,27 @@ class Page1(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.startButton = ctk.CTkButton(
-            self, text="Start", width=100, height=30, fg_color="#696969", command=self.start)
+            self, text="Confirm", width=100, height=30, fg_color="#696969", command=self.start)
         self.startButton.grid(column=1, row=2, padx=(0, 120), pady=(0, 10), sticky="se")
 
         self.exitButton = ctk.CTkButton(
             self, text="Cancel", width=100, height=30, fg_color="#696969", command=self.on_closing)
         self.exitButton.grid(column=1, row=2, padx=(0, 10), pady=(0, 10), sticky="se")
 
-    #Functions -----------------------------------------------------------
+    #---------------------------------------------------------------------
 
     def start(self):
+        if self.master.printImage == None:
+            return
+
         self.master.show_frame(Page2)
 
     def on_closing(self):
-        try:
-            self.master.destroy()
-        except:
-            pass
+        self.master.close()
 
-        #-----------------------------------------------------------------
+    #---------------------------------------------------------------------
 
-    def dnd(self, event):
+    def dnd(self, event): # drag and drop
         self.showImage(event.data)
         self.imgPath = event.data
 
@@ -244,12 +268,12 @@ class Page1(ctk.CTkFrame):
 
     def showImage(self, path):
         image = Image.open(path)
-        image = image.resize((self.IMGSIZE, self.IMGSIZE), Image.NEAREST)
-        selecedImage = ctk.CTkImage(light_image=image, dark_image=image, size=(self.IMGSIZE, self.IMGSIZE))
+        image = image.resize((IMGSIZE, IMGSIZE), Image.NEAREST)
+        selecedImage = ctk.CTkImage(light_image=image, dark_image=image, size=(IMGSIZE, IMGSIZE))
 
         self.selectImageLabel.configure(text="", image=selecedImage)
 
-        #-----------------------------------------------------------------
+    #---------------------------------------------------------------------
 
     def processing(self):
         if self.imgPath == "":
@@ -257,14 +281,14 @@ class Page1(ctk.CTkFrame):
         try:
             processedImg, lego, needItemCount = convert_image(self.imgPath)
         except Exception:
-            pass
+            return
         
         self.master.lego = lego
         self.master.printImage = processedImg
         self.master.needItemCount = needItemCount
 
-        processedImg = processedImg.resize((self.IMGSIZE, self.IMGSIZE), Image.NEAREST)
-        processedCTkImg = ctk.CTkImage(light_image=processedImg, dark_image=processedImg, size=(self.IMGSIZE, self.IMGSIZE))
+        processedImg = processedImg.resize((IMGSIZE, IMGSIZE), Image.NEAREST)
+        processedCTkImg = ctk.CTkImage(light_image=processedImg, dark_image=processedImg, size=(IMGSIZE, IMGSIZE))
 
         self.processedImageLabel.configure(text="", image=processedCTkImg)
 
@@ -288,14 +312,21 @@ class Page2(ctk.CTkFrame):
         self.progressAnimationValue = 0
         self.remainingPrintingTime = None
 
-        self.isStarting = False
+        self.started = False
         self.isPaused = False
+
+        self.pixel_mbox = None
+        self.comm_mbox = None
         
         #-----------------------------------------------------------------
 
+        self._setup_ui()
+        threading.Thread(target=self.startup, daemon=True).start() # without threading page2 is never opened (stuck until func startup ends)
+
+    def _setup_ui(self):
+
         self.inProgressFrame = ctk.CTkFrame(self)
-        self.inProgressFrame.grid(column=0, row=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
-        # self.inProgressFrame.grid_propagate(False)
+        self.inProgressFrame.grid(column=0, row=0, rowspan=2, padx=(10, 10), pady=(10, 10), sticky="nsew")
 
             #-------------------------------------------------------------
 
@@ -329,7 +360,7 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.itemListFrame = ctk.CTkFrame(self)
-        self.itemListFrame.grid(column=1, row=0, rowspan=2, padx=(0, 10), pady=(10, 10), sticky="nsew")
+        self.itemListFrame.grid(column=1, row=0, padx=(0, 10), pady=(10, 10), sticky="nsew")
         self.itemListFrame.grid_rowconfigure((0, 3), weight=1)
 
             #-------------------------------------------------------------
@@ -382,10 +413,44 @@ class Page2(ctk.CTkFrame):
 
         #-----------------------------------------------------------------
 
+        self.settingsFrame = ctk.CTkFrame(self)
+        self.settingsFrame.grid(column=1, row=1, rowspan=2, padx=(0, 10), pady=(0, 10), sticky="nsew")
+        self.settingsFrame.grid_rowconfigure((0, 1), weight=1)
+        self.settingsFrame.grid_columnconfigure((0, 1), weight=1)
+
+            #-------------------------------------------------------------
+
+        self.speedLabel = ctk.CTkLabel(self.settingsFrame, text="Speed (%)")
+        self.speedLabel.grid(column=0, row=0, padx=(0, 20), pady=(0, 10), sticky="se")
+
+        self.speedVar = ctk.StringVar(value="25")
+        self.speedVar.trace_add("write", self.speedVarChange)
+        self.speedEntry = ctk.CTkEntry(self.settingsFrame, textvariable=self.speedVar, width=40, state="disabled")
+        self.speedEntry.grid(column=1, row=0, padx=(0, 0), pady=(0, 10), sticky="sw")
+
+            #-------------------------------------------------------------
+
+        self.parallelAxisLabel = ctk.CTkLabel(self.settingsFrame, text="Simul. axis")
+        self.parallelAxisLabel.grid(column=0, row=1, padx=(0, 20), pady=(0, 0), sticky="ne")
+
+        self.parallelAxisVar = ctk.BooleanVar(value=False)
+        self.parallelAxisVar.trace_add("write", self.parallelAxisVarChange)
+        self.parallelAxisCheckbox = ctk.CTkCheckBox (
+            self.settingsFrame,
+            text=None,
+            variable=self.parallelAxisVar,
+            onvalue=True,
+            offvalue=False,
+            width=24,
+            state="disabled"
+        )
+        self.parallelAxisCheckbox.grid(column=1, row=1, padx=(0, 0), pady=(0, 0), sticky="nw")
+
+        #-----------------------------------------------------------------
+
         self.progressFrame = ctk.CTkFrame(self)
-        self.progressFrame.grid(column=0, row=1, padx=(10, 10), pady=(0, 10), sticky="nsew")
+        self.progressFrame.grid(column=0, row=2, padx=(10, 10), pady=(0, 10), sticky="nsew")
         self.progressFrame.grid_columnconfigure((0, 2), weight=1)
-        # self.progressFrame.grid_propagate(False)
 
             #-------------------------------------------------------------
 
@@ -402,8 +467,7 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.infoFrame = ctk.CTkFrame(self)
-        self.infoFrame.grid(column=0, row=2, columnspan= 2, padx=(10, 10), pady=(0, 10), sticky="nsew")
-        # self.infoFrame.grid_propagate(False)
+        self.infoFrame.grid(column=0, row=3, columnspan=2, padx=(10, 10), pady=(0, 10), sticky="nsew")
 
             #-------------------------------------------------------------
 
@@ -416,145 +480,258 @@ class Page2(ctk.CTkFrame):
         #-----------------------------------------------------------------
 
         self.manageButton = ctk.CTkButton(
-            self, text="Pause", width=100, height=30, fg_color="#696969", command=self.pause)
-        self.manageButton.grid(column=0, row=3, columnspan=2, padx=(0, 120), pady=(0, 10), sticky="ne")
+            self, text="Start", width=100, height=30, fg_color="#696969", command=self.startPrinting, state="disabled")
+        self.manageButton.grid(column=0, row=4, columnspan=2, padx=(0, 120), pady=(0, 10), sticky="ne")
 
         self.exitButton = ctk.CTkButton(
             self, text="Cancel", width=100, height=30, fg_color="#696969", command=self.on_closing)
-        self.exitButton.grid(column=0, row=3, columnspan=2, padx=(0, 10), pady=(0, 10), sticky="ne")
+        self.exitButton.grid(column=0, row=4, columnspan=2, padx=(0, 10), pady=(0, 10), sticky="ne")
 
-        #-----------------------------------------------------------------
-
-        threading.Thread(target=self.onStarting).start()
-
-    #Functions -----------------------------------------------------------
+    #---------------------------------------------------------------------
 
     def on_closing(self):
-        try:
-            self.master.destroy()
-            self.ssh.exec_command("exit")
-        except:
-            pass
+        self.master.close()
 
-    def pause(self):
+    def pause(self, ev3=False):
         self.isPaused = True
         self.insertInfoTextBox("warning", "Printing has been paused.")
-        self.mbox.send("pause")
+        if not ev3:
+            self.comm_mbox.send("pause")
         self.manageButton.configure(text="Continue", text_color="#ff8800", command=self.resume)
 
     def refill(self):
         self.isPaused = True
+        self.insertInfoTextBox("warning", "Printing has been paused.")
         self.insertInfoTextBox("warning", "Please refill all colours.")
-        self.mbox.send("refill")
-        self.manageButton.configure(text="Continue", text_color="#ff8800", command=self.resume)
+        self.manageButton.configure(text="Continue", text_color="#ff8800", command=self.resume, state="disabled")
 
     def resume(self):
         self.isPaused = False
         self.insertInfoTextBox("warning", "Printing has been continued.")
-        self.mbox.send("resume")
-        self.manageButton.configure(text="Pause", text_color="#ffffff", command=self.pause)
+        self.comm_mbox.send("resume")
+        self.resetManageButton()
+  
+    def recalibration(self):
+        self.insertInfoTextBox("msg", "Recalibration of the EV3 has started...")
 
     def startError(self):
-        self.isStarting = False
-        self.manageButton.configure(text="Retry", text_color="#ff8800", command=lambda: threading.Thread(target=self.onStarting).start())
+        self.started = False
+        self.manageButton.configure(text="Retry", text_color="#ff8800", command=lambda: threading.Thread(target=self.startup).start(), state="normal")
 
     def resetManageButton(self):
         self.manageButton.configure(text="Pause", text_color="#ffffff", command=self.pause)
 
-        #-----------------------------------------------------------------
+    #---------------------------------------------------------------------
     
-    def onStarting(self):
-        if self.isStarting == True:
+    def startup(self):
+        if self.started:
             return
-        
-        self.isStarting = True
+        self.started = True
 
-        #update content
-        self.updateContent()
+        self.manageButton.configure(text="Start", fg_color="#696969", command=self.startPrinting, state="disabled") #update manage button
+        self.updateContent() #update content on page2
 
-        #start mindstorms
-        ev3Start = self.startMindstorms()
-        if ev3Start == False:
+        #starts the programm on the EV3
+        ev3Start = self.startProgramm()
+        if not ev3Start:
+            self.insertInfoTextBox("error", "No connection with EV3 possible.")
             self.startError()
             return
-
-        #connect to mindstorms 
-        SERVER = "F4:84:4C:CA:82:23"
-
-        client = BluetoothMailboxClient()
-
-        self.mbox = TextMailbox("pixel", client)
         
-        time.sleep(1)
-        self.insertInfoTextBox("msg", "Connection to EV3 Mailbox is attempted...")
-        try:
-            client.connect(SERVER)
-        except Exception as e:
+        #connect to mailbox
+        mailboxStart = self.startMailbox()
+        if not mailboxStart:
+            # self.insertInfoTextBox("error", "The EV3 or the EV3 Mailbox Server is not available.")
             self.insertInfoTextBox("error", "The EV3 Mailbox Server is not available.")
             self.startError()
             return
-        self.insertInfoTextBox("msg", "Connection to EV3 Mailbox has been established.")
 
-        time.sleep(1)
-
+        #send printing data to ev3
         self.insertInfoTextBox("msg", "Sending printing data to EV3...")
-        self.mbox.send(self.master.lego)
+        self.pixel_mbox.send(self.master.lego)
 
-        self.mbox.wait()
-        msg = self.mbox.read()
-        if msg == "received lego data":
-            self.insertInfoTextBox("msg", "Printing data was sent successfully.")
+        self.pixel_mbox.wait()
+        msg = self.pixel_mbox.read()
 
-            self.insertInfoTextBox("msg", "Calibration of the EV3 has started...")
-
-            self.mbox.wait() 
-            msg = self.mbox.read()
-            if msg == "ready":
-                self.insertInfoTextBox("msg", "Calibration of the EV3 is complete.")
-
-                time.sleep(1)
-
-                self.mbox.send("run")
-                self.insertInfoTextBox("msg", "Printing has started...")
-
-                self.resetManageButton()
-                self.startTime = time.time()
-                self.progressAnimation()
-                self.timeAnimation()
-                self.printingDataProcessing()
-
-        else:
+        if msg != "received lego data":
             self.insertInfoTextBox("error", "Printing data could not be transferred.")
             self.startError()
+            return 
 
-    def startMindstorms(self):
-        self.ssh = paramiko.SSHClient()        
-        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self.insertInfoTextBox("msg", "Printing data was sent successfully.")
+
+        #enable settings
+        self.speedEntry.configure(state="normal")
+        self.parallelAxisCheckbox.configure(state="normal")
+
+        #calibration
+        self.insertInfoTextBox("msg", "Calibration of the EV3 has started...")
+
+        self.pixel_mbox.wait() 
+        msg = self.pixel_mbox.read()
+
+        #ready for printing
+        if msg == "ready":
+            self.insertInfoTextBox("msg", "Calibration of the EV3 is complete.")
+
+            time.sleep(1)
+            self.insertInfoTextBox("msg", "Press Start to initiate the printing process.")
+            self.manageButton.configure(state="normal")
+
+    def startProgramm(self):
+        self.master.ssh = paramiko.SSHClient()        
+        self.master.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self.insertInfoTextBox("msg", "Connection to EV3 is attempted...")
         try:
-            self.ssh.connect(
-                "ev3dev",
-                username="robot",
-                password="maker",
-                look_for_keys=False,   # Add this
-                allow_agent=False      # And this
-            )
+            self.master.ssh.connect(hostname=EV3_HOST, username=EV3_USER,password=EV3_PASS,look_for_keys=False,allow_agent=False)
             self.insertInfoTextBox("msg", "Connection to EV3 has been established.")
-        except Exception as e:
-            print(e)
-            self.insertInfoTextBox("error", "No connection with EV3 possible.")
+        except Exception:
             return False
         
         time.sleep(1)
-        
         self.insertInfoTextBox("msg", "Programme is started on EV3...")
-        brickrun_command = f'brickrun -r --directory="/home/robot/PixelArtRobot/robot" "/home/robot/PixelArtRobot/robot/main.py"'
-        self.ssh.exec_command(brickrun_command)
-
+        brickrun_command = f'brickrun -r --directory="{EV3_MAIN_DIR}" "{EV3_MAIN_PATH}"'
+        self.master.ssh.exec_command(brickrun_command)
         time.sleep(5)
-        self.insertInfoTextBox("msg", "Programme has started successfully.")
+
+        return True
+
+    def startMailbox(self):
+        client = BluetoothMailboxClient()
+
+        self.pixel_mbox = TextMailbox("pixel", client)
+        self.comm_mbox = TextMailbox("comm", client)
+        
+        self.insertInfoTextBox("msg", "Connection to EV3 Mailbox is attempted...")
+        waitTime = 2
+        for attempt in range(3):
+            try:
+                client.connect(EV3_MAILBOX_SERVER)
+                break
+            except Exception:
+                if attempt < 2:
+                    self.insertInfoTextBox("warning", f"Connection to EV3 Mailbox failed (attempt {attempt+1}/3). Retrying in {waitTime}s...")
+                    print("1")
+                    time.sleep(waitTime)
+                    print("2")
+                    waitTime += 2
+                else:
+                    return False
+        
+        time.sleep(1)
+        self.insertInfoTextBox("msg", "The programme was started successfully and a connection to the EV3 mailbox was established.")
+        time.sleep(1)
+
+        return True
 
         #-----------------------------------------------------------------
+
+    def startPrinting(self):
+        self.pixel_mbox.send("run")
+        self.insertInfoTextBox("msg", "Printing has started...")
+
+        self.resetManageButton()
+        self.startTime = time.time()
+        self.progressAnimation()
+        self.timeAnimation()
+        threading.Thread(target=self.receiveMessages, daemon=True).start()
+        threading.Thread(target=self.printingDataProcessing, daemon=True).start()
+
+    #---------------------------------------------------------------------
+
+    def printingDataProcessing(self):
+        totalNeedCount = sum(self.master.needItemCount.values())
+        totalPlacedCount = 0
+
+        while True:
+            self.pixel_mbox.wait()
+            data = self.pixel_mbox.read()
+            data = eval(data)
+
+            if len(data) == 3:
+                x, y = map(int, data[1].split(","))
+                cord = (x, 31-y)
+                color = data[2]
+
+            if data[0] == "finished":
+                self.isPaused = True
+                self.progressAnimationBar.set(1)
+                hours, remainder = divmod((time.time() - self.startTime), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                self.progressRemainingTimeLabel.configure(
+                    text=f"    -    Finished after {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds.")
+                self.manageButton.configure(state="disabled")
+                self.exitButton.configure(text="Exit")
+                self.insertInfoTextBox("msg", "The EV3 has finished printing.")
+                break
+
+            elif data[0] == "couldnt placed":
+                self.printingImage.putpixel(cord, (255, 0, 0))
+
+                self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
+
+            elif data[0] == "couldnt placed with stone":
+                self.pause(True)
+                self.printingImage.putpixel(cord, (255, 0, 0))
+                self.insertInfoTextBox("warning", f"{cord}, {color} could not be placed after 3 attempts.")
+                self.insertInfoTextBox("warning", "Please remove the stone on the placement arm.")
+                
+            elif data[0] == "multiple stones":
+                self.pause(True)
+                self.printingImage.putpixel(cord, (255, 0, 0))
+                self.insertInfoTextBox("warning", "The EV3 has picked up multiple stones.")
+                self.insertInfoTextBox("warning", "Please remove the stones on the placement arm.")
+
+            elif data[0] == "no stone":
+                self.pause(True)
+                self.insertInfoTextBox("warning", f"The EV3 could not pick up {color}.")
+                self.insertInfoTextBox("warning", "Please check the storage location of the stone.")
+
+
+            elif data[0] == "placed":
+                self.printingImage.putpixel(cord, COLOR_LIST[color])
+
+                self.master.placedItemCount[color] += 1
+                self.updateItemCount()
+                
+            totalPlacedCount += 1
+
+            processPercentage = totalPlacedCount / totalNeedCount
+            self.progressBar.set(processPercentage)
+            self.progressPercentageLabel.configure(text=f"{processPercentage*100:.0f}%")
+
+            betweenTime = time.time() - self.startTime
+            timeOnePart = betweenTime / totalPlacedCount
+            self.remainingPrintingTime = (totalNeedCount - totalPlacedCount) * timeOnePart
+
+            image = self.printingImage.resize((320,320), Image.NEAREST)
+            printingCTkImg = ctk.CTkImage(light_image=image, dark_image=image, size=(320, 320))
+            self.printLabel.configure(image=printingCTkImg)
+
+    #---------------------------------------------------------------------
+
+    def timeAnimation(self):
+        if self.remainingPrintingTime != None and self.remainingPrintingTime > 0 and not self.isPaused:
+            self.remainingPrintingTime -= 1
+
+            hours, remainder = divmod(self.remainingPrintingTime, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            self.progressRemainingTimeLabel.configure(text=f"    -    {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds remaining.")
+
+        self.after(1000, self.timeAnimation)
+
+    def progressAnimation(self):
+        if not self.isPaused:
+            self.progressAnimationValue += 0.01
+            
+            if self.progressAnimationValue >= 1:
+                self.progressAnimationValue = 0
+            
+            self.progressAnimationBar.set(self.progressAnimationValue)
+        
+        self.after(6, self.progressAnimation)
+
+    #---------------------------------------------------------------------
 
     def updateContent(self):
         image = self.master.printImage
@@ -571,109 +748,6 @@ class Page2(ctk.CTkFrame):
         self.lightTextLabel.configure(text=str(self.master.placedItemCount["light_bluish_grey"]) + "/" + str(self.master.needItemCount["light_bluish_grey"]))
         self.whiteTextLabel.configure(text=str(self.master.placedItemCount["white"]) + "/" + str(self.master.needItemCount["white"]))
 
-        #-----------------------------------------------------------------
-
-    def printingDataProcessing(self):
-        colorList = {
-            "black": (5, 19, 29),
-            "dark_bluish_grey": (108, 110, 104),
-            "light_bluish_grey": (160, 165, 169),
-            "white": (255, 255, 255)
-        }
-
-            #-------------------------------------------------------------
-
-        self.mbox.wait()
-        cord = self.mbox.read()
-
-            #- Finished --------------------------------------------------
-
-        if cord == "finished":
-            self.isPaused = True
-            self.progressAnimationBar.set(1)
-            hours, remainder = divmod((time.time() - self.startTime), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            self.progressRemainingTimeLabel.configure(text=f"    -    Finished after {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds.")
-            return
-
-            #-------------------------------------------------------------
-
-        self.mbox.wait()
-        color = self.mbox.read()
-        cord = ast.literal_eval(cord)
-        cord = (int(cord[0]), 31-int(cord[1]))
-
-            #- PrintImage -----------------------------------------------
-
-        self.printingImage.putpixel(cord, colorList[color])
-        image = self.printingImage.resize((320,320), Image.NEAREST)
-        printingCTkImg = ctk.CTkImage(light_image=image, dark_image=image, size=(320, 320))
-        self.printLabel.configure(image=printingCTkImg)
-
-            #- ItemCount/Process ----------------------------------------
-
-        self.master.placedItemCount[color] += 1
-        self.master.refillItemCount[color] += 1
-        self.updateItemCount()
-
-        totalNeedCount = 0
-        for _, count in self.master.needItemCount.items():
-            totalNeedCount += count
-
-        totalPlacedCount = 0
-        for _, count in self.master.placedItemCount.items():
-            totalPlacedCount += count
-
-        processPercentage = totalPlacedCount / totalNeedCount
-
-        self.progressBar.set(processPercentage)
-        self.progressPercentageLabel.configure(text=f"{processPercentage*100:.0f}%")
-
-            #- Remaining Time --------------------------------------------
-
-        betweenTime = time.time() - self.startTime
-
-        timeOnePart = betweenTime / totalPlacedCount
-
-        self.remainingPrintingTime = (totalNeedCount - totalPlacedCount) * timeOnePart
-
-            #- Refill ----------------------------------------------------
-
-        for _, count in self.master.refillItemCount.items():
-            if count % 13 == 0 and count != 0:
-                self.refill()
-                self.master.refillItemCount = {"black": 0, "dark_bluish_grey": 0, "light_bluish_grey": 0, "white":0}
-                break
-
-            #- Restart ---------------------------------------------------
-
-        self.printingDataProcessing()
-
-        #-----------------------------------------------------------------
-
-    def timeAnimation(self):
-        if self.remainingPrintingTime != None and self.isPaused == False:
-            self.remainingPrintingTime -= 1
-
-            hours, remainder = divmod(self.remainingPrintingTime, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            self.progressRemainingTimeLabel.configure(text=f"    -    {int(hours)} hours, {int(minutes)} minutes and {seconds:.0f} seconds remaining.")
-
-        self.after(1000, self.timeAnimation)
-
-    def progressAnimation(self):
-        if self.isPaused == False:
-            self.progressAnimationValue += 0.01
-            
-            if self.progressAnimationValue >= 1:
-                self.progressAnimationValue = 0
-            
-            self.progressAnimationBar.set(self.progressAnimationValue)
-        
-        self.after(6, self.progressAnimation)
-
-        #-----------------------------------------------------------------
-
     def insertInfoTextBox(self, type, text):
         self.infoTextBox.configure(state="normal")
         time = datetime.datetime.now()
@@ -688,12 +762,41 @@ class Page2(ctk.CTkFrame):
 
         self.infoTextBox.see("end")
         self.infoTextBox.configure(state="disabled")
-        
+
+    #---------------------------------------------------------------------
+
+    def receiveMessages(self):
+        while True:
+            self.comm_mbox.wait()
+            msg = self.comm_mbox.read()
+
+            if msg == "refill":
+                self.refill()
+
+            elif msg == "recalibration":
+                self.recalibration()
+                self.comm_mbox.wait()
+                msg = self.comm_mbox.read()
+                if msg == "recalibrated":
+                    self.insertInfoTextBox("msg", "Recalibration of the EV3 is complete.")
+                    self.insertInfoTextBox("msg", "Printing is continued...")
+                    self.manageButton.configure(state="normal")
+
+            elif msg == "pause":
+                self.pause(True)
+
+    def speedVarChange(self, *args):
+        speed = self.speedVar.get()
+        if speed == "" or speed == None:
+            return
+        self.comm_mbox.send("speed:" + str(speed))
+
+    def parallelAxisVarChange(self, *args):
+        parallelAxis = self.parallelAxisVar.get()
+        self.comm_mbox.send("parallelAxis:" + str(parallelAxis))
+
 #-------------------------------------------------------------------------
 
 if __name__ == "__main__":
     app = App()
-
     app.mainloop()
-
-

@@ -101,7 +101,6 @@ class PixelArtRobot():
     #-------------------------------------------------------------------------
 
     def calculate_degree(self, cord, type=None, currentDegree=0):
-        print("OK")
         distance_cm = self.onePlate * cord
 
         scope = 3.14159265359 * self.gearDiameter
@@ -109,9 +108,11 @@ class PixelArtRobot():
         degree = rotations * 360
 
         if self.ev3.battery.voltage() > 7900:
+            print("above")
             pullCorrection = {"x": 0.05, "y": -0.05} # x,y negative (31-0)
-            pushCorrection = {"x": 0.05, "y": -0.05} # x,y positive (0-31)
+            pushCorrection = {"x": 0.05, "y": 0} # x,y positive (0-31)
         else:
+            print("below")
             pullCorrection = {"x": 0.1, "y": -0.1}
             pushCorrection = {"x": 0.05, "y": 0}
         
@@ -247,13 +248,13 @@ class PixelArtRobot():
                 wait(10)
 
             # Handle recalibration
-            if recalibration:
-                self.ev3.screen.clear()
-                self.ev3.screen.draw_text(10, 10, "Recalibration...")
-                self.comm_mbox.send("recalibration")
-                self.calibration()
-                recalibration = False
-                self.comm_mbox.send("recalibrated")
+            # if recalibration:
+            #     self.ev3.screen.clear()
+            #     self.ev3.screen.draw_text(10, 10, "Recalibration...")
+            #     self.comm_mbox.send("recalibration")
+            #     self.calibration()
+            #     recalibration = False
+            #     self.comm_mbox.send("recalibrated")
             
             # Get stone
             cord, color = lego.pop(0)
@@ -270,7 +271,7 @@ class PixelArtRobot():
                 refillItemCount[color] += 1
 
             if not self.isPaused:
-                if 240 < self.pickedupAngle < 250: # Probably successfully picked up
+                if 230 < self.pickedupAngle < 260: # Probably successfully picked up
                     print("Probably successfully picked up")
                     pickedup = True
 

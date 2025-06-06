@@ -40,7 +40,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.title("PixelArtRobot")
         self.geometry(f"{800}x{530}")
-        # self.resizable(width=False, height=False)
+        self.resizable(width=False, height=False)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
         #-----------------------------------------------------------------
@@ -49,7 +49,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         ctk.set_widget_scaling(dpi_factor)          
         ctk.set_window_scaling(dpi_factor)  
         
-#-----------------------------------------------------------------
+        #-----------------------------------------------------------------
         
         self.printImage = None
         self.needItemCount = {}
@@ -61,6 +61,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
         self._loadImages()
         self.show_frame(Page1)
+
+    #---------------------------------------------------------------------
 
     def _loadImages(self):
         imagePath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "img")
@@ -92,8 +94,6 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             light_image=Image.open(os.path.join(imagePath, "white.png")),
             dark_image=Image.open(os.path.join(imagePath, "white.png")), size=(32, 32))
 
-        #-----------------------------------------------------------------
-
     #---------------------------------------------------------------------
 
     def close(self):
@@ -112,8 +112,6 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         frame.grid(row=0, column=0, sticky="nsew")
 
         frame.tkraise()
-
-    #---------------------------------------------------------------------
 
 #-------------------------------------------------------------------------
 

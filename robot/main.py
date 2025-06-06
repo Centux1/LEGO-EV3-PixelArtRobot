@@ -80,10 +80,10 @@ class PixelArtRobot():
         # self.gearPitchDiameter = 1.54
 
         # self.pullCorrection = {"x": -0.025, "y": -0.1} #old
-        self.pullCorrection = {"x": 0.1, "y": -0.1} #working x,y negative (31-0)
+        # self.pullCorrection = {"x": 0.1, "y": -0.1} #working x,y negative (31-0)
 
         # self.pushCorrection = {"x": 0.15, "y": -0.01} #old
-        self.pushCorrection = {"x": 0.1, "y": 0} #working x,y positive (0-31)
+        # self.pushCorrection = {"x": 0.1, "y": 0} #working x,y positive (0-31)
 
         self.motorSpeed = 200
         self.parallelAxis = False
@@ -108,11 +108,9 @@ class PixelArtRobot():
         degree = rotations * 360
 
         if self.ev3.battery.voltage() > 7900:
-            print("above")
             pullCorrection = {"x": 0.05, "y": -0.05} # x,y negative (31-0)
             pushCorrection = {"x": 0.05, "y": 0} # x,y positive (0-31)
         else:
-            print("below")
             pullCorrection = {"x": 0.1, "y": -0.1}
             pushCorrection = {"x": 0.05, "y": 0}
         
@@ -272,18 +270,18 @@ class PixelArtRobot():
 
             if not self.isPaused:
                 if 230 < self.pickedupAngle < 260: # Probably successfully picked up
-                    print("Probably successfully picked up")
+                    # print("Probably successfully picked up")
                     pickedup = True
 
                 elif self.pickedupAngle < 220: # Picked up multiple stones
-                    print("Picked up multiple stones")
+                    # print("Picked up multiple stones")
                     self.pause()
                     pickedup = False
                     self.pixel_mbox.send(["multiple stones", cord, color])
                     lego.insert(0, [cord, color])
 
                 elif self.pickedupAngle > 250: # No stone in storage location
-                    print("No stone in storage location")
+                    # print("No stone in storage location")
                     self.pause()
                     pickedup = False
                     self.pixel_mbox.send(["no stone", cord, color])
@@ -295,14 +293,14 @@ class PixelArtRobot():
 
             if not self.isPaused:
                 if 190 < self.placedAngle < 200: # Successfully placed
-                    print("Successfully placed")
+                    # print("Successfully placed")
                     placeAttempt = 0
                     pickedup = False
                     placed = True
                     self.pixel_mbox.send(["placed", cord, color])
 
                 elif self.placedAngle > 220: # Not placed and not picked up
-                    print("Not placed and not picked up")
+                    # print("Not placed and not picked up")
                     pickedup = False
                     if placeAttempt >= 2:
                         placed = True
@@ -313,7 +311,7 @@ class PixelArtRobot():
                         lego.insert(0, [cord, color])
 
                 elif self.placedAngle < 190: # Not placed but picked up
-                    print("Not placed but picked up")
+                    # print("Not placed but picked up")
 
                     if placeAttempt >= 2:
                         pickedup = False

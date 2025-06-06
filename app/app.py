@@ -38,7 +38,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         #-----------------------------------------------------------------
 
         super().__init__()
-        self.title("PixelArtRobot")
+        self.title("EV3 - PixelArtRobot")
         self.geometry(f"{800}x{530}")
         self.resizable(width=False, height=False)
         self.protocol("WM_DELETE_WINDOW", self.close)

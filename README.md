@@ -1,3 +1,3 @@
-# Pixel Art Robot
+# LEGO EV3 Pixel Art Robot
 
 Lego Mindstorm Pixel Art Robot
